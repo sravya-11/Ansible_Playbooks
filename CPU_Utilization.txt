@@ -1,0 +1,32 @@
+---
+- name: Check CPU Utilization on Windows
+  hosts: windows
+  gather_facts: no
+  tasks:
+
+    - name: Get CPU utilization using PowerShell
+      win_shell: |
+        $cpu = Get-Counter '\Processor(_Total)\% Processor Time'
+        $usage = [math]::Round($cpu.CounterSamples[0].CookedValue, 2)
+        Write-Output $usage
+      register: cpu_result
+
+    - name: Set CPU usage fact
+      set_fact:
+        cpu_usage: "{{ cpu_result.stdout | float }}"
+
+    - name: Display CPU usage
+      debug:
+        msg: "Current CPU usage is {{ cpu_usage }}%"
+
+    - name: Check if CPU usage is above threshold
+      debug:
+        msg: "CPU usage is above 90%. Action is required!"
+      when: cpu_usage > 90
+
+    - name: Check if CPU usage is normal
+      debug:
+        msg: "CPU usage is within acceptable limits."
+      when: cpu_usage <= 90
+	  
+	  

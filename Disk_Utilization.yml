@@ -1,0 +1,93 @@
+---
+- name: Check disk usage and clean old logs if needed
+  hosts: windows
+  gather_facts: no
+  vars:
+    drive_letter: 'C:'
+    threshold_percent: 80
+    temp_dirs:
+      - 'C:\\Temp'
+      - 'C:\\test'
+    days_old: 30
+    email_recipient: 'admin@example.com'
+    email_sender: 'ansible@example.com'
+    smtp_host: 'smtp.example.com'
+
+  tasks:
+
+    - name: Get disk usage
+      win_shell: |
+        $disk = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='{{ drive_letter }}'" 
+        [math]::Round((($disk.Size - $disk.FreeSpace) / $disk.Size) * 100)
+      register: disk_usage_before
+
+    - name: Set fact for disk usage
+      set_fact:
+        usage_percent_before: "{{ disk_usage_before.stdout | int }}"
+
+    - name: Debug disk usage before cleanup
+      debug:
+        msg: "Disk usage before cleanup: {{ usage_percent_before }}%"
+
+    - name: Check if disk usage is high
+      set_fact:
+        is_high_usage: "{{ usage_percent_before > threshold_percent }}"
+
+    - name: Delete files older than 30 days if usage is high
+      win_find:
+        paths: "{{ item }}"
+        age: "{{ days_old }}"
+        age_stamp: mtime
+        recurse: yes
+      loop: "{{ temp_dirs }}"
+      register: old_files
+      when: is_high_usage
+
+    - name: Remove old files
+      win_file:
+        path: "{{ item.path }}"
+        state: absent
+      loop: "{{ old_files.results | map(attribute='files') | sum(start=[]) }}"
+      when: is_high_usage
+
+    - name: Get disk usage after cleanup
+      win_shell: |
+        $disk = Get-WmiObject Win32_LogicalDisk -Filter "DeviceID='{{ drive_letter }}'" 
+        [math]::Round((($disk.Size - $disk.FreeSpace) / $disk.Size) * 100)
+      register: disk_usage_after
+      when: is_high_usage
+
+    - name: Set fact for disk usage after cleanup
+      set_fact:
+        usage_percent_after: "{{ disk_usage_after.stdout | int }}"
+      when: is_high_usage
+
+    - name: Send email - usage still high
+      mail:
+        host: "{{ smtp_host }}"
+        port: 25
+        to: "{{ email_recipient }}"
+        from: "{{ email_sender }}"
+        subject: "Disk Cleanup Alert - Usage Still High"
+        body: "Disk usage on {{ drive_letter }} is still high after cleanup: {{ usage_percent_after }}%"
+      when: is_high_usage and usage_percent_after > threshold_percent
+
+    - name: Send email - usage now low
+      mail:
+        host: "{{ smtp_host }}"
+        port: 25
+        to: "{{ email_recipient }}"
+        from: "{{ email_sender }}"
+        subject: "Disk Cleanup Successful"
+        body: "Disk usage on {{ drive_letter }} is now under control: {{ usage_percent_after }}%"
+      when: is_high_usage and usage_percent_after <= threshold_percent
+
+    - name: Send email - usage not high
+      mail:
+        host: "{{ smtp_host }}"
+        port: 25
+        to: "{{ email_recipient }}"
+        from: "{{ email_sender }}"
+        subject: "Disk Usage Normal"
+        body: "Disk usage on {{ drive_letter }} is normal: {{ usage_percent_before }}%"
+      when: not is_high_usage
