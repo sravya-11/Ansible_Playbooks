@@ -1,23 +1,59 @@
-1. Project Title
-# Ansible Playbooks for System Monitoring
+# Dynamic System Health and CIS Compliance Check Playbook
 
-2. Description
-This repository contains Ansible playbooks for automating system monitoring and maintenance tasks on Windows servers. 
-The playbooks help in checking CPU utilization, disk usage, and performing cleanup operations when thresholds are exceeded.
+## Overview
+This Ansible playbook dynamically adds a target host and performs:
+- **System Health Checks**
+  - Memory utilization
+  - CPU utilization
+  - Disk utilization
+- **CIS Compliance Checks**
+  - `PASS_MAX_DAYS` in `/etc/login.defs`
+  - Disable SSH root login in `/etc/ssh/sshd_config`
 
-3. Features
+It provides clear status messages and restarts SSH if required.
 
-CPU Utilization Check – Monitors CPU usage on Windows hosts.
-Disk Usage Check & Cleanup – Deletes old files if disk usage exceeds a defined threshold.
-Email Notifications – Sends alerts about disk status after cleanup.
+---
 
-4. Playbooks Included
+## Features
+- Dynamic host addition using `add_host`.
+- Threshold-based health checks with customizable variables.
+- CIS hardening for password policy and SSH configuration.
 
-cpu_utilization.yml – Checks CPU usage.
-disk_cleanup.yml – Monitors disk usage and cleans old logs if needed.
+---
 
-5. Requirements
+## Variables
+You can adjust thresholds in the `vars` section:
+```yaml
+memory_threshold: 80    # Memory usage alert threshold (%)
+cpu_threshold: 85       # CPU usage alert threshold (%)
+disk_threshold: 80      # Disk usage alert threshold (%)
+pass_max_days_expected: 90  # Password max days policy
+```
 
-Ansible installed on control node.
-Windows hosts configured for Ansible (WinRM enabled).
-SMTP server details for email notifications.
+---
+
+## How to Run
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/<your-username>/<your-repo>.git
+   cd <your-repo>
+   ```
+2. Run the playbook:
+   ```bash
+   ansible-playbook health_cis_check.yml -e "target_host=<hostname>"
+   ```
+   Replace `<hostname>` with the target machine name or IP.
+
+---
+
+## Output
+- Displays memory, CPU, and disk utilization status.
+- Shows compliance messages for CIS checks.
+- Restarts SSH service if configuration changes.
+
+---
+
+## Notes
+- Requires SSH access to the target host.
+- Tested on Linux systems.
+
