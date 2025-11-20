@@ -1,0 +1,93 @@
+---
+- name: Dynamically add target host
+  hosts: localhost
+  gather_facts: no
+  tasks:
+    - name: Add target host at runtime
+      ansible.builtin.add_host:
+        name: "{{ target_host }}"
+        groups: dynamic_hosts
+
+- name: Perform system health and CIS compliance checks
+  hosts: dynamic_hosts
+  gather_facts: yes
+  vars:
+    memory_threshold: 80
+    cpu_threshold: 85
+    disk_threshold: 80
+    pass_max_days_expected: 90
+
+  tasks:
+    # Memory Check
+    - name: Check memory utilization
+      ansible.builtin.debug:
+        msg: >
+          {% set mem_used = (ansible_facts['memtotal_mb'] - ansible_facts['memfree_mb']) %}
+          {% set mem_percent = (mem_used / ansible_facts['memtotal_mb']) * 100 %}
+          {% if mem_percent < memory_threshold %}
+          Memory usage is OK ({{ mem_percent | round(2) }}%). Proceed further.
+          {% else %}
+          Memory usage is HIGH ({{ mem_percent | round(2) }}%). Please investigate.
+          {% endif %}
+
+    # CPU Utilization Check
+    - name: Check CPU utilization dynamically
+      ansible.builtin.shell: |
+        top -bn1 | grep "Cpu(s)" | awk -F',' '{for(i=1;i<=NF;i++){if($i ~ /id/) {split($i,a," "); print 100 - a[1]}}}'
+      register: cpu_usage
+      changed_when: false
+
+    - name: Display CPU utilization
+      ansible.builtin.debug:
+        msg: >
+          {% set cpu_percent = cpu_usage.stdout | float %}
+          {% if cpu_percent < cpu_threshold %}
+          CPU usage is OK ({{ cpu_percent | round(2) }}%). Proceed further.
+          {% else %}
+          CPU usage is HIGH ({{ cpu_percent | round(2) }}%). Please investigate.
+          {% endif %}
+
+    # Disk Utilization Check (Dynamic Style)
+    - name: Check disk utilization dynamically
+      ansible.builtin.shell: |
+        df -h | awk '{if($NF=="/"){for(i=1;i<=NF;i++){if($i ~ /%$/){gsub("%","",$i); print $i}}}}'
+      register: disk_usage
+      changed_when: false
+
+    - name: Display disk utilization
+      ansible.builtin.debug:
+        msg: >
+          {% set disk_percent = disk_usage.stdout | int %}
+          {% if disk_percent < disk_threshold %}
+          Disk usage is OK ({{ disk_percent }}%). Proceed further.
+          {% else %}
+          Disk usage is HIGH ({{ disk_percent }}%). Please investigate.
+          {% endif %}
+
+    # CIS Check: PASS_MAX_DAYS
+    - name: Ensure PASS_MAX_DAYS compliance
+      ansible.builtin.lineinfile:
+        path: /etc/login.defs
+        regexp: '^PASS_MAX_DAYS'
+        line: "PASS_MAX_DAYS {{ pass_max_days_expected }}"
+      notify: Restart SSH if needed
+      tags: cis
+
+    # CIS Check: SSH root login disabled
+    - name: Ensure SSH root login disabled
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^PermitRootLogin'
+        line: 'PermitRootLogin no'
+      notify: Restart SSH if needed
+      tags: cis
+
+    # Final Health Summary
+    - name: Display final health status
+      ansible.builtin.debug:
+        msg: "Health checks completed. Review above messages for compliance."
+
+  handlers:
+    - name: Restart SSH if needed
+      ansible.builtin.service:
+        name: sshd
